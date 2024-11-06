@@ -1,0 +1,157 @@
+#include <Servo.h>
+#include <HardwareSerial.h>
+
+#define TRIG_PIN 25
+#define ECHO_PIN 26
+#define SERVO_PIN 27
+#define LED_RED 12
+#define LED_YELLOW 13
+#define LED_GREEN 14
+#define LIGHT_SENSOR 34
+#define METAL_SENSOR 35
+#define STEP_PIN_1 18
+#define DIR_PIN_1 19
+#define MOTOR_IN1 22
+#define MOTOR_IN2 23
+
+Servo ultrasonicServo;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Piny pro LED a senzory
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_RED, OUTPUT);
+  pinMode(LED_YELLOW, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LIGHT_SENSOR, INPUT);
+  pinMode(METAL_SENSOR, INPUT);
+
+  // Nastavení motorů a serva
+  pinMode(STEP_PIN_1, OUTPUT);
+  pinMode(DIR_PIN_1, OUTPUT);
+  pinMode(MOTOR_IN1, OUTPUT);
+  pinMode(MOTOR_IN2, OUTPUT);
+
+  ultrasonicServo.attach(SERVO_PIN);
+  ultrasonicServo.write(90);  // Výchozí pozice
+}
+
+void loop() {
+  checkBatteryStatus(); // Kontrola stavu baterie
+  controlLightLED();    // Kontrola světla a LED indikace
+  automaticMowing();    // Režim sekání a návratu
+  delay(100);
+}
+
+// Funkce pro kontrolu stavu baterie
+void checkBatteryStatus() {
+  int batteryLevel = analogRead(36); // Příklad
+  if (batteryLevel < 1000) {
+    digitalWrite(LED_RED, HIGH);
+    digitalWrite(LED_YELLOW, LOW);
+    digitalWrite(LED_GREEN, LOW);
+  } else if (batteryLevel < 2000) {
+    digitalWrite(LED_RED, LOW);
+    digitalWrite(LED_YELLOW, HIGH);
+    digitalWrite(LED_GREEN, LOW);
+  } else {
+    digitalWrite(LED_RED, LOW);
+    digitalWrite(LED_YELLOW, LOW);
+    digitalWrite(LED_GREEN, HIGH);
+  }
+}
+
+// Funkce pro rozsvícení LED v noci
+void controlLightLED() {
+  int lightLevel = analogRead(LIGHT_SENSOR);
+  if (lightLevel < 500) {
+    digitalWrite(2, HIGH);  // Noční LED
+  } else {
+    digitalWrite(2, LOW);
+  }
+}
+
+// Funkce pro detekci překážky
+bool detectObstacle() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  int duration = pulseIn(ECHO_PIN, HIGH);
+  int distance = duration * 0.034 / 2;
+  return distance < 20;
+}
+
+// Otáčení ultrazvukového senzoru
+void rotateServo() {
+  ultrasonicServo.write(0);
+  delay(500);
+  ultrasonicServo.write(180);
+  delay(500);
+  ultrasonicServo.write(90);
+}
+
+// Funkce pro automatické sekání
+void automaticMowing() {
+  // Zapnutí čepele (DC motor)
+  digitalWrite(MOTOR_IN1, HIGH);
+  digitalWrite(MOTOR_IN2, LOW);
+
+  while (!detectBoundary()) { // Kontrola hranice
+    if (detectObstacle()) {
+      // Detekce překážky, otočení
+      rotateServo();
+      moveStepperBackward(); // Úhyb
+    } else {
+      moveStepperForward(); // Pokračuj vpřed
+    }
+  }
+
+  // Po dokončení sekání nebo nízké baterii návrat do nabíjecí stanice
+  returnToChargingStation();
+}
+
+// Pohyb krokového motoru vpřed
+void moveStepperForward() {
+  digitalWrite(DIR_PIN_1, HIGH);
+  for (int i = 0; i < 200; i++) {
+    digitalWrite(STEP_PIN_1, HIGH);
+    delayMicroseconds(1000);
+    digitalWrite(STEP_PIN_1, LOW);
+    delayMicroseconds(1000);
+  }
+}
+
+// Funkce pro pohyb zpět
+void moveStepperBackward() {
+  digitalWrite(DIR_PIN_1, LOW);
+  for (int i = 0; i < 200; i++) {
+    digitalWrite(STEP_PIN_1, HIGH);
+    delayMicroseconds(1000);
+    digitalWrite(STEP_PIN_1, LOW);
+    delayMicroseconds(1000);
+  }
+}
+
+// Detekce hranice pozemku pomocí detektoru kovu
+bool detectBoundary() {
+  int metalSignal = digitalRead(METAL_SENSOR);
+  return metalSignal == HIGH; // Pokud detekuje kov, vrací true
+}
+
+// Návrat do nabíjecí stanice
+void returnToChargingStation() {
+  // Zastavení čepele
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, LOW);
+  
+  // Logika pro návrat do nabíjecí stanice
+  while (!detectBoundary()) {
+    moveStepperBackward(); // Hledání drátu
+  }
+  Serial.println("V nabíjecí stanici");
+}
