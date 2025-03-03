@@ -1,0 +1,129 @@
+from machine import Pin, PWM
+import time
+from ulab import numpy as np
+import huskylens
+from servo import Servo
+from bluetooth import BluetoothSerial
+
+# Inicializace Bluetooth
+bt = BluetoothSerial()
+
+# Definice pinů pro krokové motory
+left_motor_pins = [Pin(12, Pin.OUT), Pin(13, Pin.OUT), Pin(14, Pin.OUT), Pin(15, Pin.OUT)]
+right_motor_pins = [Pin(16, Pin.OUT), Pin(17, Pin.OUT), Pin(18, Pin.OUT), Pin(19, Pin.OUT)]
+
+# Kroky pro plný krok
+full_step_sequence = [
+    [1, 0, 0, 1],
+    [1, 0, 0, 0],
+    [1, 1, 0, 0],
+    [0, 1, 0, 0],
+    [0, 1, 1, 0],
+    [0, 0, 1, 0],
+    [0, 0, 1, 1],
+    [0, 0, 0, 1]
+]
+
+# Servo inicializace
+servo_koš = Servo(1)  # Pin G1
+servo_koš2 = Servo(35)  # Pin G35
+
+# Inicializace HuskyLens
+hlens = huskylens.HuskyLens()
+hlens.init()
+
+# Funkce pro řízení motorů
+def step_motor(motor_pins, step_sequence, delay=0.002):
+    for step in step_sequence:
+        for pin, state in zip(motor_pins, step):
+            pin.value(state)
+        time.sleep(delay)
+
+def move_forward(steps, delay=0.002):
+    for _ in range(steps):
+        step_motor(left_motor_pins, full_step_sequence, delay)
+        step_motor(right_motor_pins, full_step_sequence, delay)
+
+def move_backward(steps, delay=0.002):
+    for _ in range(steps):
+        step_motor(left_motor_pins, full_step_sequence[::-1], delay)
+        step_motor(right_motor_pins, full_step_sequence[::-1], delay)
+
+def turn_right(steps=50):
+    for _ in range(steps):
+        step_motor(left_motor_pins, full_step_sequence, 0.002)
+
+def turn_left(steps=50):
+    for _ in range(steps):
+        step_motor(right_motor_pins, full_step_sequence, 0.002)
+
+def stop():
+    for pin in left_motor_pins + right_motor_pins:
+        pin.value(0)
+
+# Funkce pro vysypání trávy
+def vysypat_travu():
+    servo_koš.write_angle(90)
+    servo_koš2.write_angle(90)
+    time.sleep(2)
+    servo_koš.write_angle(0)
+    servo_koš2.write_angle(0)
+
+# Funkce pro návrat do stanice
+def vratit_do_stanice():
+    print("Hledám dokovací stanici...")
+    while True:
+        objects = hlens.get_blocks()
+        for obj in objects:
+            if obj.color == 'ORANGE':
+                print("Dokovací stanice nalezena, jedu k ní!")
+                move_forward(500)  # Přibližná vzdálenost
+                stop()
+                return
+
+def vysypat_a_vratit():
+    print("Hledám místo pro vysypání trávy...")
+    while True:
+        objects = hlens.get_blocks()
+        for obj in objects:
+            if obj.color == 'RED':
+                print("Místo nalezeno, vysypávám trávu!")
+                vysypat_travu()
+                vratit_do_stanice()
+                return
+
+# Hlavní smyčka
+if __name__ == "__main__":
+    while True:
+        if bt.available():
+            command = bt.read().decode('utf-8')
+            if command == 'F':
+                move_forward(100)
+            elif command == 'B':
+                move_backward(100)
+            elif command == 'L':
+                turn_left(50)
+            elif command == 'R':
+                turn_right(50)
+            elif command == 'S':
+                stop()
+            elif command == 'H':  # Nový příkaz pro návrat a vysypání
+                vysypat_a_vratit()
+        else:
+            move_forward(100)  # Vyjetí z domečku
+            turn_right(50)
+            move_forward(900)  # První dlouhá rovinka
+            turn_left(50)
+            move_forward(500)  # Druhá rovinka
+            turn_left(50)
+            move_forward(800)  # Další část spirály
+            
+            # Detekce pomocí HuskyLens
+            objects = hlens.get_blocks()
+            for obj in objects:
+                if obj.color == 'ORANGE':
+                    print("Dokovací stanice nalezena!")
+                elif obj.color == 'RED':
+                    print("Místo pro vysypání nalezeno!")
+                    vysypat_travu()
+Rychlá odpověď
